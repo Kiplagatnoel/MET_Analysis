@@ -1,0 +1,952 @@
+---
+title: "Multi-environmental analysis (MET) of a simulated dataset using metan pakage"
+author: "Kiplagat John Noel"
+output:
+  html_document: default
+word_document: default
+date: "`r Sys.Date()`"
+---
+
+
+```{r, echo = FALSE}
+suppressPackageStartupMessages({
+library(agridat)
+library(reshape2)
+library(pls)
+library(pheatmap)
+library(factoextra)
+library(pvclust)
+library(cowplot)
+library(metan)
+library(agridat)
+library(ggplot2)
+library(knitr)
+library(tidyr)
+})
+
+```
+
+
+## Introduction
+
+Multi-environment trials (MET) are crucial steps in plant breeding programs that aim at increasing crop productivity to ensure global food security. The analysis of MET data requires the combination of several approaches including data manipulation, visualization and modelling. As new methods are proposed, analysing MET data correctly and completely remains a challenge, often intractable with existing tools.
+
+In 50 years (1967–2017) the world average of cereal yields has increased by 64%, from 1.68 to 2.76 tons/ha. In the same period, the total production of cereals has raised from 1.305 × 109 to 3.6 × 109 tons, an increase of 175%, while the cultivated area increased by only 7.9% in the same period (FAOSTAT, 2019). These unparallel increases have been possible due to the improved cultivation techniques in combination with superior cultivars. For maize, for example, 50% of the increase in yield was due to breeding (Duvick, 2005). Plant breeding programs have been developing new cultivars for adaptation to new locations, management practices or growing conditions, in a clear and crucial example of exploitation of genotype-versus-environment interaction (GEI).
+
+The breeders' desire to modelling the GEI appropriately has led to the development of the so-called stability analyses, which includes ANOVA-based methods (Annicchiarico, 1992; Shukla, 1972; Wricke, 1965; Yates & Cochran, 1938); regression-based methods (Eberhart & Russell, 1966); nonparametric methods (Fox, Skovmand, Thompson, Braun, & Cormier, 1990; Huehn, 1979; Lin & Binns, 1988; Thennarasu, 1995) and some methods that combines different statistical techniques, such as the additive main effect and multiplicative interaction (AMMI; Gauch, 2013) and genotype plus genotype-versus-environment interaction (GGE; Yan & Kang, 2003). Then, it is no surprise that scientific production related to multi-environment trial analysis has been growing fast in the recent decades. A bibliometric survey in the SCOPUS database revealed that in the last half-century (1969–2019) 6,590 documents were published in 902 sources (journals, books, etc.) by 19,351 authors. In this period, the number of publications has been increased on average by 11.22% per year but were in the last 10 years the largest amount (~64%) of the documents that were published (see Appendix S1, item 1 for more details).
+
+Linear mixed-effect models (LMM) has been more frequently used to analyse MET data. For example, between 2013 and 2015, the larger number of papers proposing methods to deal with GEI were related to the best linear unbiased prediction (BLUP) in LMMs (Eeuwijk, Bustos-Korts, & Malosetti, 2016). Recent advances in this field showed that BLUP is more predictively accurate than AMMI and that the main advantages of these methods can be combined to help researchers to select or recommend stable and high productive genotypes (Olivoto, Lúcio, Silva, Marchioro, et al., 2019). Thus, the rapid spread of these methods to users around the world can be facilitated if these procedures are implemented in specific software.
+
+In most cases, analysing MET data involves manual checking of the data subset(s) to identify possible outliers, using some biometrical model to explore the relationships between traits(or groups of traits), computing a within-environment ANOVA, computing a joint-ANOVA, and, in case of a significant GEI, applying some stability method to explore it. While a spreadsheet program (e.g. Microsoft Excel) may be used to perform a visual check for outliers, an integrated development environment (IDE, e.g. R, SAS or Matlab) is often required to process the complex matrix operations required in some stability methods. IDEs, however, require a certain degree of expertise to use and have steep learning curves, which sometimes prevents that a coding layman implements certain methods. In this sense, R (R Core Team, 2019) packages have been making easier the life of hundreds of thousands of researchers by providing freely collections of functions developed by the community.
+
+Some open-source R software packages that are designed—or are suitable—for analysing MET data are available. The stability package (https://CRAN.R-project.org/package=stability) contains a collection of functions to perform stability analysis. The ammistability package (https://CRAN.R-project.org/package=ammistability) computes multiple AMMI-based stability parameters. The gge (https://CRAN.R-project.org/package=gge) and GGEBiplots (https://CRAN.R-project.org/package=GGEBiplots) packages may be used to produce a GGE biplot. The R packages agricolae (https://CRAN.R-project.org/package=agricolae) and plantbreeding (http://plantbreeding.r-forge.r-project.org/), while not specifically coded for MET analysis provide useful functions for computing parametric and nonparametric stability statistics. Although useful, these packages do not offer options to perform a complete analysis of MET data, i.e. to provide tools for all steps of the analysis (check, manipulation, analysis and visualization of data). For example, GGEBiplots requires as input data a two-way table containing genotype by environment means with genotypes in rows and environments in columns, but doesn't provide any function to create quickly such table from data that often is in a ‘long’ format in R. In addition, several studies often compare different stability methods (e.g. Bornhofen et al., 2017; Freiria et al., 2018; Scapim et al., 2010; Shahbazi, 2019; Teodoro et al., 2019; Woyann et al., 2018). This requires a range of different packages to be used, making the coding tedious and difficult to follow. Thus, it seems to be value the creation of an R package that presents an easy workflow, incorporates the most used stability statistics, recently proposed stability methods (Olivoto, Lúcio, Silva, Marchioro, et al., 2019; Olivoto, Lúcio, Silva, Sari, Lúcio, Silva, Sari, & Diel, 2019), options for cross-validation procedures (Piepho, 1994) and BLUP-based stability statistics (Colombari Filho et al., 2013). These features are frequently used but are not yet implemented in any other R package for MET analysis.
+
+Here, we describe the metan (multi-environment trial analysis) package, an open-source R package designed to provide an efficient and reproducible workflow for the analysis of MET data. Our main aim in this paper was to describe the features of metan and how this collection of functions can be useful for an intuitive and complete analysis of MET data.
+
+Here we describe the metan R package, a collection of functions that implement a workflow-based approach to (a) check, manipulate and summarize typical MET data; (b) analyse individual environments using both fixed and mixed-effect models; (c) compute parametric and nonparametric stability statistics; (d) implement biometrical models widely used in MET analysis and (e) plot typical MET data quickly.
+
+
+
+```{r, echo = FALSE}
+# Barley heights and environmental covariates in Norway
+data("aastveit.barley.covs")
+data("aastveit.barley.height")
+
+  
+  # First, PCA of each matrix separately
+Z1 <- acast(aastveit.barley.height, year ~ gen, value.var="height")
+Z2 <- sweep(Z1, 1, rowMeans(Z1))
+Z3 <- sweep(Z2, 2, colMeans(Z2)) # Double-centered
+sum(Z3^2)*4 # Total SS = 10165
+sv <- svd(Z3)$d
+#round(100 * sv^2/sum(sv^2),1) # Prop of variance each axis
+
+```
+
+
+## Scree plot of eigenvalues
+
+```{r, echo = FALSE}
+# Aastveit Figure 1.  PCA of height
+pca <- prcomp(Z3)
+scree_plot <- fviz_screeplot(pca)
+scree_plot
+```
+
+
+## Quality of variables representation 
+
+```{r, echo = FALSE}
+cos2_plot <- fviz_cos2(pca, choice = "var", axes = 1:2)
+cos2_plot
+
+```
+
+
+## Variables contribution to dimension 1
+
+```{r, echo = FALSE}
+dim1_contrib_plot <- fviz_contrib(pca, choice = "var", axes = 1, top = 10)
+dim1_contrib_plot
+
+```
+
+## Variables contribution to dimension 2
+
+```{r, echo = FALSE}
+dim2_contrib_plot <- fviz_contrib(pca, choice = "var", axes = 2, top = 10)
+dim2_contrib_plot
+
+```
+
+## Variables contribution to both dimensions
+
+```{r, echo = FALSE}
+dim12_contrib <- fviz_contrib(pca, choice = "var", axes = 1:2, top = 10)
+dim12_contrib
+
+```
+
+## Variables loading plot
+
+```{r, echo = FALSE}
+var_loadings_plot <- fviz_pca_var(pca, col.var = "cos2", gradient.col=c("#00afbb", "#e7b800","#fc4e07")) #repel=TRUE))
+var_loadings_plot
+
+```
+
+## PCA Bi-plot
+
+```{r, echo = FALSE}
+scaled_df <- scale(Z1)
+#scaled_df
+set.seed(123)
+km.res <- kmeans(scaled_df, 3)
+
+
+clust_membership_biplot <- fviz_pca_biplot(pca, label = "var",habillage = km.res$cluster,
+                                           addEllipses=TRUE, ellipse.level=0.95,gradient.col=c("#00afbb", "#e7b800","#fc4e07"),
+                                           ggtheme = theme_minimal(),repel=TRUE)
+clust_membership_biplot
+
+```
+
+## Plot of PCA loading
+
+```{r, echo = FALSE}
+pcaloadings_plot <- pca$rotation %>%
+  as.data.frame() %>%
+  mutate(variables = rownames(.)) %>%
+  gather(PC,loading,PC1:PC2) %>%
+  ggplot(aes(loading, variables, fill = loading > 0)) +
+  geom_col() + geom_text(aes(label= (round(loading, 2))),color="black", size=2)+
+  ggtitle("PCA loadings plot")+
+  facet_wrap(~PC, scales = "free_y") +
+  labs(x = "Value of loading",y = NULL, fill = "Positive?")+
+  theme_minimal(base_size = 13)+ scale_fill_brewer(palette = "Set1")
+
+pcaloadings_plot
+
+```
+## Scree, Biplot and PCA loading plots on one grid
+
+```{r, echo = FALSE}
+top_row <- plot_grid(scree_plot, clust_membership_biplot, labels = c('A', 'B'), label_size = 22)
+bottom_row <- plot_grid(pcaloadings_plot, labels = c('C'), label_size = 22)
+completepcaplot <- plot_grid(top_row, bottom_row, labels = c('', ''), label_size = 22, ncol = 1)
+completepcaplot
+
+```
+
+
+## Pearson's correlation heatmap for all genotypes
+
+```{r, echo = FALSE}
+c = round(Hmisc::rcorr(as.matrix(Z1))$r, 2)
+ph <- pheatmap::pheatmap(c,display_numbers = TRUE,main="Complete Pearson correlation heatmap for all genotypes")
+ph
+
+```
+
+
+## Simulated dataset to matcht the first 3 columns acorsi.grayleafspot of Dataset.
+
+```{r, echo = FALSE}
+#df <- read.csv("multi_env_trial_data.csv")
+set.seed(34)
+data("acorsi.grayleafspot")
+df <- acorsi.grayleafspot[-4]
+df$DTF <- round(runif(648,25,56),0)
+df$DTM <- round(runif(648,78,118),0)
+df$PL <- round(runif(648,10.5,24.73),2)
+df$NSP <- round(runif(648,8.67,28.67),2)
+df$NPP <- round(runif(648,5.67,66),2)
+df$GYP <- round(runif(648,7.33,114.67),2)
+df$GYR <- round(runif(648,81,1070.33),2)
+df$TW <- round(runif(648,100,1101),2)
+
+kable(head(df))
+```
+
+
+## Dataset summary and Variables visualisation
+
+```{r, echo = FALSE}
+insp_plot <- metan::inspect(df, plot = TRUE,threshold=36)
+kable(insp_plot)
+```
+
+
+## Individual ANOVA
+
+```{r, echo = FALSE}
+indiv <- anova_ind(df, env, gen, rep, TW, verbose = FALSE)
+kable(head(indiv$TW$individual))
+
+```
+
+## GE Plot (heatmap)
+
+```{r, echo = FALSE}
+gen_mod <- gamem(df, gen, rep,resp = everything())
+
+a <- ge_plot(df, gen, rep, TW)
+a
+```
+
+
+## GE Plot (line)
+ 
+ Genotypes seems to show higher values in the second replication.
+
+```{r, echo = FALSE}
+b <- ge_plot(df, gen, rep, TW, type = 2)
+b
+```
+
+
+## Winning genotypes by Environment and Trait
+
+```{r, echo = FALSE}
+w<-ge_winners(df, env, gen, resp = everything())
+knitr::kable(head(w))
+```
+
+
+## Genotype ranking by Environment and Trait
+
+```{r, echo = FALSE}
+w_rank<-ge_winners(df, env, gen, resp = everything(), type = "ranks")
+knitr::kable(head(w_rank))
+```
+
+## ANOVA for DTF trait 
+```{r, echo = FALSE}
+joint <- anova_joint(df, env, gen,rep, resp = everything(), verbose = FALSE)
+knitr::kable(head(joint$DTF$anova))
+
+```
+
+
+## Classification of evironment favourability
+
+```{r, echo = FALSE}
+ann <- Annicchiarico(df, env, gen, rep, TW)
+knitr::kable(head(ann$TW$environments))
+
+```
+
+
+
+## Plot showing Favourability of Environments (TW)
+
+```{r, echo = FALSE}
+myenvs <- ann$TW$environments
+
+env_plot <- myenvs %>%
+    ggplot(aes(index, ENV, fill = index > 0)) +
+    geom_col() + geom_text(aes(label= (round(index, 2))),color="black", size=2)+
+    ggtitle("Favourability of Environments")+
+    labs(x = "Favourability index",y = "ENV", fill = "Favourable?")+
+    theme_minimal(base_size = 13)+ scale_fill_brewer(palette = "Set1")
+
+env_plot
+
+```
+
+## Ecovalence with regards to TW
+
+```{r, echo = FALSE}
+eco <- ecovalence(df, env, gen, rep, TW)
+print(eco)
+knitr::kable(head(eco))
+```
+
+
+## Shukla stability statistics for TW
+
+```{r, echo = FALSE}
+Shu <- Shukla(df, env, gen, rep, TW)
+knitr::kable(head(Shu))
+
+```
+
+
+## Regression model estimates for TW 
+
+```{r, echo = FALSE}
+reg_model <- ge_reg(df, env, gen, rep, TW)
+kable(reg_model$TW$regression)
+
+```
+
+
+## Regression plot for TW trait
+
+```{r}
+plot(reg_model)
+
+```
+
+
+## Factor Analysis (FA) plot for TW trait
+
+```{r, echo = FALSE}
+# super <- superiority(df, env, gen, rep, TW)
+# print(super)
+
+fact <- ge_factanal(df, env, gen, rep, TW)
+plot(fact)
+
+```
+
+
+## Plot of explained variance by each PC for TW trait
+
+```{r, echo = FALSE}
+fa_pca<-fact$TW$PCA
+p1<-ggplot(fa_pca, aes(x=PCA,y=Variance))+
+    geom_col( aes(fill = PCA ))+
+    ggtitle("TW Variace explained by each PC in the factor model")+
+    geom_text(aes(label=paste(round(Variance,2),"%"), vjust=-0.5))+
+    scale_fill_brewer(palette = "YlGnBu")+
+    labs(x="PC", y="Variance Explained")+
+    theme(
+        axis.title.x=element_text(size=12, face = "bold", color = "black"),
+        axis.text.x=element_text(size=12,face="bold",angle = 45, hjust = 1, vjust = 0.5),
+        plot.title=element_text(color="darkgreen", size=18, hjust=0.5),
+        axis.text.y=element_text(size=12,face="bold"),
+        axis.title.y=element_text(size=12, face = "bold", color = "black")
+    )
+
+p1
+
+```
+
+
+## Plot showing CV for each environment
+
+```{r, echo = FALSE}
+fa_cv<-fact$TW$env_strat
+p2<-ggplot(fa_cv, aes(x=Env,y=CV))+
+    geom_col( aes(fill = Env ))+
+    ggtitle("TW Coefficients of Variation (CV) across environments")+
+    geom_text(aes(label=round(CV,1), vjust=-0.5))+
+    scale_fill_brewer(palette = "YlGnBu")+
+    labs(x="Environment", y="Coefficient of Variation")+
+    theme(
+        axis.title.x=element_text(size=12, face = "bold", color = "black"),
+        axis.text.x=element_text(size=12,face="bold",angle = 45, hjust = 1, vjust = 0.5),
+        plot.title=element_text(color="darkgreen", size=18, hjust=0.5),
+        axis.text.y=element_text(size=12,face="bold"),
+        axis.title.y=element_text(size=12, face = "bold", color = "black")
+    )
+
+p2
+
+```
+
+## Anova fot TW trait
+
+```{r, echo = FALSE}
+AMMI_model <- performs_ammi(df, env, gen, rep, TW)
+kable(AMMI_model$TW$ANOVA)
+
+```
+
+
+## PCA values TW trait
+
+```{r, echo = FALSE}
+kable(head(AMMI_model$TW$PCA))
+
+```
+
+
+## Fitted model TW trait
+
+```{r, echo = FALSE}
+kable(head(AMMI_model$TW$model))
+
+```
+
+
+## AMMI stability plot for TW
+
+```{r, echo = FALSE}
+plot(AMMI_model)
+
+```
+
+
+## Predicted values for TW
+
+```{r, echo = FALSE}
+#IF 4 IPCA WERE SIGNIFICANT
+predicted <- predict(AMMI_model, naxis = 4)
+kable(head(predicted))
+
+```
+
+
+
+```{r, echo = FALSE}
+AMMI_model2 <- waas(df, env, gen, rep, TW, verbose = FALSE)
+
+```
+
+
+## Mean of GxE for TW
+
+```{r, echo = FALSE}
+
+kable(head(AMMI_model2$TW$MeansGxE))
+```
+
+
+## A plot of AMMI stability scores for TW trait
+
+
+```{r, echo = FALSE}
+b <- plot_scores(AMMI_model,col.gen = "#00AFBB", col.env = "#FC4E07",plot_theme = theme_metan_minimal())
+b
+```
+
+
+## AMMI2 Biplot with polygon
+
+```{r, echo = FALSE}
+d <- plot_scores(AMMI_model,
+                 type = 2,
+                 polygon = T,
+                 col.gen = "#00AFBB", 
+                 col.env = "#FC4E07",
+                 col.segm.env = "#FFFFFF00", # Transparent
+                 axis.expand = 1.5,
+                 plot_theme = theme_metan(grid = "both"))
+
+d
+```
+
+## Y x WAAS Biplot for TW
+
+```{r, echo = FALSE}
+#The genotypes or environments included in quadrant I can be considered unstable genotypes or environments with
+# high discrimination ability, and with productivity below the grand mean. In the quadrant II are
+# included unstable genotypes, although with productivity above the grand mean. The environments
+# included in this quadrant deserve special attention since, in addition to providing high magnitudes
+# of the response variable, they present a good discrimination ability. Genotypes within quadrant
+# III have low productivity, but can be considered stable due to the lower values of WAASB. The
+# lower this value, the more stable the genotype can be considered. The environments included in
+# this quadrant can be considered as poorly productive and with low discrimination ability. The
+# genotypes within the quadrant IV are highly productive and broadly adapted due to the high
+# magnitude of the response variable and high stability performance (lower values of WAASB). Only
+# objects of class waas can be used to produce such biplot (in our example, waas_index2).
+e <- plot_scores(AMMI_model2, col.gen = "#00AFBB", col.env = "#FC4E07",type = 3)
+e
+```
+
+
+
+
+## WAASB_model for Random effects
+
+```{r, echo = FALSE}
+#Nominal yield and environment IPCA1
+# A graphic with the nominal yield (ˆy
+# ij ) as a function of the environment IPCA1 scores can
+# be used for identifying possible mega-environments as well as visualizing the “which-won-where”
+# pattern was produced. In this graphic, each genotype is depicted by a straight line with the equation
+# ˆy
+# ij = μi +0.5
+# 1 ai1 ×0.5
+# 1 tj1 , where μi is the nominal yield for the ith genotype in i the environment
+# j; μi is the grand mean of the genotype i; 0.5
+# 1 ai1 is the IPCA1 score of the genotype i; and 0.5
+# 1 tj1
+# is the IPCA1 score of the environment j. The winner genotype in a given environment has the
+# highest nominal yield in that environment
+
+
+# BLUPS
+# y = Xb + Zu + e
+suppressMessages(WAASB_model <- waasb(df, env, gen, rep,resp = everything()),classes = "message")
+
+#The normality of the random effects may be also obtained by using type = "re". Let’s do it.
+plot(WAASB_model, type = "re", ncol = 4)
+
+```
+
+
+## The variance components for the random effects for TW
+
+```{r, echo = FALSE}
+#The variance components for the random effects in the model can be obtained using
+vcomp <- get_model_data(WAASB_model, what = "vcomp")
+kable(vcomp)
+```
+
+
+## The genetic parameter in the model for TW
+
+```{r, echo = FALSE}
+#The genetic parameter in the model can be obtained using
+genpar <- get_model_data(WAASB_model, what = "genpar")
+kable(vcomp)
+```
+
+
+## Predicted means for each genotypes for TW
+
+```{r, echo = FALSE}
+#To obtain the predicted means for each genotypes, simply use the argument what = 'blupg' in the function get_model_data().
+gblup <- get_model_data(WAASB_model, what = "blupg")
+kable(gblup)
+```
+
+
+## Predicted means for each genotype environment combination for TW
+
+```{r, echo = FALSE}
+#In the same way, use what = 'blupge' to obtain the predicted means for each genotype environment combination.
+geblup <- get_model_data(WAASB_model,what = "blupge")
+kable(head(geblup))
+```
+
+
+# BLUP-based stability statistics for TW
+
+```{r, echo = FALSE}
+#BLUP-based stability statistics
+blup_stats <- get_model_data(WAASB_model, what = "WAASB")
+kable(blup_stats)
+```
+
+
+
+## GGE model prdictions for TW
+
+```{r, echo = FALSE}
+gge_model <- gge(df, env, gen, TW)
+preds <- predict(gge_model)
+kable(head(preds))
+
+```
+
+
+
+## Biplot type 2: Mean performance vs. stability (colored by genotype)
+
+```{r, echo = FALSE}
+# Biplot type 2: Mean performance vs. stability
+# In this biplot, the visualization of the mean and stability of genotypes is achieved by drawing
+# an average environment coordinate (AEC) on the genotype-focused biplot. First, an average
+# environment, represented by the small circle, is defined by the mean PC1 and PC2 scores of the
+# environments. The line that passes through the biplot origin and the AEC may be called the average.
+# The projections of genotype markers onto this axis should, therefore, approximate the mean
+# yield of the genotypes. Thus, the G8 was clearly the highest-yielding genotype, on average.
+# The AEC ordinate is the line that passes through the biplot origin and is perpendicular to
+# the AEC abscissa. Therefore, if the AEC abscissa represents the G, the AEC ordinate must
+# approximate the GEI associated with each genotype, which is a measure of variability or instability
+# of the genotypes (Yan et al., 2007). A greater projection onto the AEC ordinate, regardless of the
+# direction, means greater instability. In our example, G3 was found to be the most stable and the
+# second most productive genotype, while G9 had great instability.
+
+b1 <- plot(gge_model,col.gen = "#00AFBB", col.env = "#FC4E07",size.text.env = 3)
+b1
+
+```
+
+
+
+## Biplot type 2: Mean performance for genotype (colored by genotype)
+
+```{r}
+gge_model2 <- gge(df, env, gen, TW, svp = "genotype")
+b3 <- plot(gge_model2,type = 2, col.gen = "#00AFBB", col.env = "#FC4E07", axis_expand = 1.5)
+b3
+```
+
+
+## Which-won-where (genotypes and environment are coloured)
+
+```{r, echo = FALSE}
+# Which-won-where
+# In this biplot, a polygon is drawn joining the genotypes (G7, G8, G9, G10, and G4) that are
+# located farthest from the biplot origin so that all other genotypes are contained in the polygon.
+# The vertex genotypes have the longest vectors, in their respective directions, which is a measure
+# of responsiveness to environments. The vertex genotypes are, therefore, among the most responsive
+# genotypes; all other genotypes are less responsive in their respective directions. A genotype
+# located at the origin would rank the same in all environments and is not at all responsive to the
+# environments.
+# The perpendicular lines to the sides of the polygon divide the biplot into sectors. Each sector
+# has a vertex genotype. For example, the sector with the vertex genotype G4 may be referred to as
+# the G4 sector; and one environment (E9), fell in this sector. As a rule, the vertex genotype is the
+# highest-yielding genotype in all environments that share the sector with it (Yan et al., 2007). In
+# this case, G4 was the highest-yielding in E9.
+gge_model3 <- gge(df, env, gen, TW, svp = "symmetrical")
+b4 <- plot(gge_model3,
+          type = 3,
+          size.shape.win = 5,
+          large_label = 6,
+          col.gen = "#00AFBB",
+          col.env = "#FC4E07",
+          annotation = FALSE,
+          title = FALSE)
+
+b4
+
+```
+
+
+
+## Discriminativeness vs. representativeness (genotypes and environment are coloured)
+
+```{r, echo = FALSE}
+gge_model3 <- gge(df, env, gen, TW, svp = "symmetrical")
+b5 <- plot(gge_model3,
+          type = 4,
+          col.gen = "#00AFBB",
+          col.env = "#FC4E07",
+          plot_theme = theme_gray())+
+    theme(legend.position = "bottom")
+b5
+
+```
+
+
+
+
+## Biplot type 5: Examine an environment (genotypes and environment are coloured)
+
+```{r, echo = FALSE}
+gge_model4 <- gge(df, env, gen, TW, svp = "symmetrical")
+
+b6 <- plot(gge_model4,
+type = 5,
+sel_env = "PG",
+col.gen = "#00AFBB",
+col.env = "#FC4E07",
+size.text.env = 5,
+axis_expand = 1.5)
+
+b6
+
+```
+
+
+
+## Biplot type 6: Ranking environments (genotypes and environment are coloured)
+
+```{r, echo = FALSE}
+gge_model5 <- gge(df, env, gen, TW)
+b7 <- plot(gge_model5,
+type = 6,
+col.gen = "#00AFBB",
+col.env = "#FC4E07",
+size.text.env = 3,
+axis_expand = 1.5)
+b7
+
+
+```
+
+
+## Examine a genotype (genotypes and environment are coloured)
+
+```{r, echo = FALSE}
+gge_model6 <- gge(df, env, gen, TW, svp = "genotype")
+
+b8 <- plot(gge_model6,
+type = 7,
+sel_gen = "G04",
+col.gen = "#00AFBB",
+col.env = "#FC4E07",
+size.text.env = 3,
+axis_expand = 1.5)
+
+b8
+
+```
+
+
+
+## Ranking genotypes (genotypes and environment are coloured)
+
+```{r, echo = FALSE}
+gge_model7 <- gge(df, env, gen, TW, svp = "genotype")
+
+b9 <- plot(gge_model7,
+type = 8,
+col.gen = "#00AFBB",
+col.env = "#FC4E07",
+size.text.gen = 3)
+
+b9
+
+
+```
+
+
+
+
+## Relationship among environments (environment are coloured)
+
+```{r, echo = FALSE}
+gge_model_8 <- gge(df, env, gen, TW)
+
+b11 <- plot(gge_model_8,
+          type = 10,
+          col.env = "#00AFBB",
+          title = FALSE,
+          annotation = FALSE)
+
+b11
+
+```
+
+
+## Plot of genotype stability indices (Interpret type III hypotheses with care)
+
+```{r, echo = FALSE}
+model_9 <- waasb(df, env, gen,rep,
+               resp = everything(),
+               random = "gen", # Default
+               wresp = rep(65, 5), # Defaults to 50
+               mresp = rep("h, l")) # Default
+
+#get_model_data(model_11, what = "WAASBY")
+
+
+index <- mtsi(model_9,index = "waasby",mineval = 0.7,verbose = FALSE)
+#print(index)
+plot(index)
+
+```
+
+
+## Estimating the WAAS index
+
+The waas() function computes the Weighted Average of Absolute Scores (Olivoto, Lúcio, Da silva, Marchioro, et al. 2019) considering (i) all principal component axes that were significant (p<0.05 by default); or (ii) declaring a specific number of axes to be used
+
+```{r, echo = FALSE}
+waas_index2 <- df %>%
+     waas(env,gen,rep,TW,
+          naxis = 4, # Use 1 IPCA for computing WAAS
+          verbose = FALSE)
+
+i <- plot_waasby(waas_index2)
+i
+```
+
+
+## Ranks of genotypes depending on the number of PCA used to estimate the WAAS (type = 2)
+
+```{r, echo = FALSE}
+WAASratio <- wsmp(waas_index2)
+ws_plot <- plot(WAASratio, type = 1)
+ws_plot
+```
+
+
+
+## Ranks of genotypes depending on the number of PCA used to estimate the WAAS (type = 2)
+
+```{r, echo = FALSE}
+ws_plot2 <- plot(WAASratio, type = 2)
+ws_plot2
+```
+
+
+## Compare two genotypes (genotypes and environments coloured)
+```{r, echo = FALSE}
+gge_model_10 <- gge(df, env, gen, TW)
+
+b10 <- plot(gge_model_10,
+type = 9,
+sel_gen1 = "G36",
+sel_gen2 = "G14",
+col.gen = "#00AFBB",
+col.env = "#FC4E07",
+title = FALSE,
+annotation = FALSE)
+
+b10
+
+```
+
+
+
+## Heatmap of stability indices by trait
+
+```{r, echo = FALSE}
+
+mat<-index$cormat
+index_cor_heatmap <- pheatmap(mat,display_numbers = TRUE,main="Heatmap of stability indices by trait")
+index_cor_heatmap
+# stab_ind <- ge_stats(df,env,gen,rep, resp = everything())
+# stab_ind
+# ranks <- get_model_data(stab_ind, "ranks")
+# ranks
+
+```
+
+
+## 95% CI plot for Pearsons's correlation coefficient
+
+```{r, echo = FALSE}
+coef_sel <- corr_coef(df, DTF, DTM, PL, NSP, NPP, GYP, GYR, TW)
+
+ci <- df %>% corr_ci(DTF, DTM, PL, NSP, NPP, GYP, GYR, TW, verbose = FALSE)
+b12 <- plot_ci(ci)
+b12
+
+```
+
+
+
+## Path analysis
+
+```{r, echo = FALSE}
+# Path analysis
+# The function colindiag() computes a collinearity diagnostic of a correlation matrix of predictor
+# traits. Several indicators, such as Variance Inflation Factor, Condition Number, and Matrix
+# Determinant are used (Tiago Olivoto et al., 2017; T. Olivoto, Souza, et al., 2017). If only the data
+# is informed in the function, all the numeric variables will be considered in the diagnostic. Here, we
+# will check the colinearity in the correlation matrix between PH, EP, EH, and CD from data_ge2.
+col_diag_trait <- colindiag(df, DTF, DTM, PL, NSP, NPP)
+col_diag_env <- colindiag(df, -contains("E"), by = env)
+
+path_all <- path_coeff(df, TW,brutstep = TRUE)
+kable(head(path_all$Summary))
+
+```
+
+
+## Eigenvalues
+
+```{r, echo = FALSE}
+path_final <- path_coeff(df,resp = TW,pred = c(DTF, DTM, PL, NSP, NPP, GYP, GYR))
+kable(head(path_final$Eigen))
+
+```
+
+
+## Correlation heatmap based on path analysis
+
+```{r, echo = FALSE}
+yy<-path_final$Corr.x
+path_cor_heatmap <- pheatmap(yy,display_numbers = TRUE,main="Correlation heatmap based on path analysis")
+path_cor_heatmap
+
+```
+
+
+## Variable contribution to DIM 1 for raw dataset
+
+```{r, echo = FALSE}
+scaled_num_df <- scale(df[,-c(1:3)])
+pca1<-prcomp(scaled_num_df)
+
+dim1 <- fviz_contrib(pca1, choice = "var", axes = 1)
+dim1
+
+```
+
+
+## Variable contribution to DIM 2 for raw dataset
+
+```{r, echo = FALSE}
+dim2 <- fviz_contrib(pca1, choice = "var", axes = 2)
+dim2
+
+```
+
+
+
+## Covariance 
+
+```{r, echo = FALSE}
+data = subset(df, env == "CM")
+rcov <- covcor_design(data, gen,rep,resp = c(DTF, DTM, PL, NSP, NPP),type = "rcov")
+kable(rcov)
+
+```
+
+
+
+## Hierrachical clustering dendrogram 1
+```{r, echo = FALSE}
+means = data %>%
+    covcor_design(gen,rep,
+                  resp = c(DTF, DTM, PL, NSP, NPP),
+                  type = "means")
+D2 <- mahala(.means = means, covar = rcov)
+
+dclust <- D2 %>% dist() %>% hclust()
+plot(dclust, hang = -1)
+
+```
+
+
+## Hierrachical clustering dendrogram (circular)
+
+```{r, echo = FALSE}
+hc_plot1 <- fviz_dend(dclust, k = 3, cex = 0.4, type = "circular", k_colors = "jco",rect = TRUE, rect_border = "jco", rect_fill = TRUE)
+hc_plot1
+
+```
+
+
+## Hierrachical clustering dendrogram (horizontal)
+
+```{r, echo = FALSE}
+hc_plot2 <- fviz_dend(dclust, k = 3, cex = 0.4, horizontal = TRUE, k_colors = "jco",rect = TRUE, rect_border = "jco", rect_fill = TRUE)
+hc_plot2
+
+```
+
+
+## Qualitative and quantitative visualization 1
+
+```{r, echo = FALSE}
+# Qualitative vs qualitative data analysis
+data_plot <- subset(df,gen %in% c("G04", "G14", "G36") & env %in% c("CM", "SP"))
+a13 <- plot_factbars(data_plot, gen, env, resp = TW)
+a13
+
+```
+
+
+
+## Qualitative and quantitative visualization 2
+
+```{r, echo = FALSE}
+data_plot <- subset(df,gen %in% c("G04", "G14", "G36") & env %in% c("CM", "GO", "GS", "JT", "LD", "PG", "PL", "PM", "SP"))
+b13 <- plot_factbars(data_plot, gen, env, resp = TW)
+b13
+
+```
+
+
+
